@@ -13,8 +13,7 @@ const LiveDetection = () => {
   const lastInstructionTime = useRef(0);
   let frameCount = 0;
   let lastTime = Date.now();
-  const BACKEND_URL =
-    process.env.NEXT_PUBLIC_BACKEND_URL || "http://192.168.137.154:5000";
+  const BACKEND_URL = "https://192.168.137.154:5000";
 
   useEffect(() => {
     const socket = io(BACKEND_URL, {
