@@ -14,7 +14,13 @@ const LiveDetection = () => {
   let lastTime = Date.now();
 
   useEffect(() => {
-    const socket = io("http://192.168.137.154:5000");
+    const BACKEND_URL =
+      process.env.NEXT_PUBLIC_BACKEND_URL || "http://192.168.137.154:5000";
+    const socket = io(BACKEND_URL, {
+      secure: true,
+      rejectUnauthorized: false,
+      transport: ["websocket"],
+    });
     socket.on("detection_results", (data) => {
       const img = new Image();
       img.onload = () => {
@@ -198,7 +204,7 @@ const LiveDetection = () => {
                   >
                     <td className="p-2">
                       <img
-                        src={`http://192.168.137.154:5000/Assets/${item.image_path
+                        src={`${BACKEND_URL}/Assets/${item.image_path
                           .split("/")
                           .pop()}`}
                         alt={itemName}
