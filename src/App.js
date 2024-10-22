@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
+import EnvDebug from "./components/EnvDebug";
 
 const LiveDetection = () => {
   const canvasRef = useRef(null);
@@ -178,6 +179,7 @@ const LiveDetection = () => {
             />
           </div>
           <div className="mt-2">FPS: {fps}</div>
+          <EnvDebug />
         </div>
         <div className="w-1/2 p-4 flex flex-col">
           <h2 className="text-2xl font-bold mb-4">Shopping Cart</h2>
