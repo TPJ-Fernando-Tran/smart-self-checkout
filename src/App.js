@@ -7,6 +7,7 @@ const LiveDetection = () => {
   const [fps, setFps] = useState(0);
   const [confirmedObjects, setConfirmedObjects] = useState({});
   const [undeterminedObjects, setUndeterminedObjects] = useState([]);
+  const [trackedObjects, setTrackedObjects] = useState([]); // Add this line
   const [instruction, setInstruction] = useState("");
   const [totalPrice, setTotalPrice] = useState(0);
   const CONFIRMATION_TIMEOUT = 7000; // 7 seconds in milliseconds
@@ -31,6 +32,7 @@ const LiveDetection = () => {
       img.src = URL.createObjectURL(
         new Blob([data.frame], { type: "image/jpeg" })
       );
+      setTrackedObjects(data.tracked_objects);
       setConfirmedObjects(data.confirmed_objects);
       setUndeterminedObjects(data.undetermined_objects);
     });
