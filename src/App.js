@@ -132,14 +132,14 @@ const LiveDetection = () => {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
 
-    // Check for long undetermined items
-    const longUndeterminedItems = trackedObjects.filter(
+    // Check for problematic undetermined items
+    const problematicItems = trackedObjects.filter(
       (obj) =>
         obj.status === "undetermined" &&
         obj.time_in_undetermined > CONFIRMATION_TIMEOUT
     );
 
-    // Check for items that should be removed
+    // Items that should be removed (stuck for too long)
     const itemsToRemove = trackedObjects.filter(
       (obj) =>
         obj.status === "undetermined" &&
@@ -150,7 +150,7 @@ const LiveDetection = () => {
       return "Some items cannot be confirmed. Please remove them and try again with valid items.";
     }
 
-    if (longUndeterminedItems.length > 0) {
+    if (problematicItems.length > 0) {
       if (confirmedCount > 0) {
         return "Please place confirmed items in the bagging area to clear the scanning area, then reposition the yellow-boxed items for better detection.";
       } else {
