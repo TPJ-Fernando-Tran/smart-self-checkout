@@ -147,7 +147,12 @@ const LiveDetection = () => {
     }
 
     if (problematicItems.length > 0) {
-      if (confirmedCount > 0) {
+      // Check if there are any confirmed items currently in the scanning area
+      const confirmedItemsInFrame = trackedObjects.filter(
+        (obj) => obj.status === "confirmed"
+      ).length;
+
+      if (confirmedItemsInFrame > 0) {
         return "Please place confirmed items in the bagging area to clear the scanning area, then reposition the yellow-boxed items for better detection.";
       } else {
         return "Items are taking longer than usual to confirm. Please reposition the yellow-boxed items to ensure they're clearly visible to the camera.";
