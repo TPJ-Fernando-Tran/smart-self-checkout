@@ -9,7 +9,9 @@ const LiveDetection = () => {
   const [undeterminedObjects, setUndeterminedObjects] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [totalPrice, setTotalPrice] = useState(0);
+  const CONFIRMATION_TIMEOUT = 7000; // 7 seconds in milliseconds
   const lastInstructionTime = useRef(0);
+
   let frameCount = 0;
   let lastTime = Date.now();
   const BACKEND_URL = "https://192.168.137.154:5000";
@@ -134,24 +136,42 @@ const LiveDetection = () => {
     const confirmedCount = Object.keys(confirmedObjects).length;
     const totalCount = confirmedCount + undeterminedObjects.length;
 
+    // No items in scanning area
     if (confirmedCount === 0 && undeterminedObjects.length === 0) {
-      return "Please place items in the scanning area.";
-    } else if (
-      undeterminedObjects.length > 0 &&
-      totalCount >= 2 &&
-      confirmedCount >= totalCount / 2
-    ) {
-      return "Please put the confirmed items in the bagging area first and reposition the yellow-boxed items.";
-    } else if (undeterminedObjects.length > 0) {
-      return "Please reposition the yellow-boxed items for better detection.";
-    } else {
-      return "All items confirmed. You can add more items or proceed to checkout.";
+      return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
+
+    // Check if any undetermined items have been in that state for too long
+    const longUndeterminedItems = trackedObjects.filter(
+      (obj) =>
+        obj.status === "undetermined" &&
+        obj.time_in_undetermined > CONFIRMATION_TIMEOUT
+    );
+
+    if (longUndeterminedItems.length > 0) {
+      if (confirmedCount > 0) {
+        return "Please place confirmed items in the bagging area to clear the scanning area, then reposition the yellow-boxed items for better detection.";
+      } else {
+        return "Items are taking longer than usual to confirm. Please reposition the yellow-boxed items to ensure they're clearly visible to the camera.";
+      }
+    }
+
+    // All items confirmed quickly
+    if (undeterminedObjects.length === 0 && confirmedCount > 0) {
+      return "All items confirmed. Place items into the bagging area and continue to scan or proceed with payment.";
+    }
+
+    // Items are still being processed within acceptable time
+    return "Scanning in progress. Please keep items steady...";
   };
 
   const speakInstruction = (text) => {
     if ("speechSynthesis" in window) {
+      // Cancel any ongoing speech
+      speechSynthesis.cancel();
+
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9; // Slightly slower for better clarity
       speechSynthesis.speak(utterance);
     }
   };
