@@ -7,10 +7,11 @@ const LiveDetection = () => {
   const [fps, setFps] = useState(0);
   const [confirmedObjects, setConfirmedObjects] = useState({});
   const [undeterminedObjects, setUndeterminedObjects] = useState([]);
-  const [trackedObjects, setTrackedObjects] = useState([]); // Add this line
+  const [trackedObjects, setTrackedObjects] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [totalPrice, setTotalPrice] = useState(0);
   const CONFIRMATION_TIMEOUT = 7000; // 7 seconds in milliseconds
+  const REMOVAL_TIMEOUT = 15000; // 15 seconds in milliseconds
   const lastInstructionTime = useRef(0);
 
   let frameCount = 0;
@@ -53,18 +54,6 @@ const LiveDetection = () => {
       0
     );
     setTotalPrice(total);
-
-    //   // Repeat instruction for undetermined items
-    //   const currentTime = Date.now();
-    //   if (
-    //     undeterminedObjects.length > 0 &&
-    //     currentTime - lastInstructionTime.current > 10000
-    //   ) {
-    //     speakInstruction(
-    //       "Please reposition the yellow-boxed items for better detection."
-    //     );
-    //     lastInstructionTime.current = currentTime;
-    //   }
   }, [confirmedObjects, undeterminedObjects]);
 
   const drawDetections = (img, trackedObjects) => {
@@ -143,12 +132,23 @@ const LiveDetection = () => {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
 
-    // Check if any undetermined items have been in that state for too long
+    // Check for long undetermined items
     const longUndeterminedItems = trackedObjects.filter(
       (obj) =>
         obj.status === "undetermined" &&
         obj.time_in_undetermined > CONFIRMATION_TIMEOUT
     );
+
+    // Check for items that should be removed
+    const itemsToRemove = trackedObjects.filter(
+      (obj) =>
+        obj.status === "undetermined" &&
+        obj.time_in_undetermined > REMOVAL_TIMEOUT
+    );
+
+    if (itemsToRemove.length > 0) {
+      return "Some items cannot be confirmed. Please remove them and try again with valid items.";
+    }
 
     if (longUndeterminedItems.length > 0) {
       if (confirmedCount > 0) {
@@ -158,12 +158,12 @@ const LiveDetection = () => {
       }
     }
 
-    // All items confirmed quickly
+    // All items confirmed
     if (undeterminedObjects.length === 0 && confirmedCount > 0) {
       return "All items confirmed. Place items into the bagging area and continue to scan or proceed with payment.";
     }
 
-    // Items are still being processed within acceptable time
+    // Default message for items being processed
     return "Scanning in progress. Please keep items steady...";
   };
 
