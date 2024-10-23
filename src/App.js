@@ -134,16 +134,12 @@ const LiveDetection = () => {
 
     // Check for problematic undetermined items
     const problematicItems = trackedObjects.filter(
-      (obj) =>
-        obj.status === "undetermined" &&
-        obj.time_in_undetermined > CONFIRMATION_TIMEOUT
+      (obj) => obj.status === "undetermined" && obj.time_in_undetermined > 7
     );
 
-    // Items that should be removed (stuck for too long)
+    // Items that should be removed
     const itemsToRemove = trackedObjects.filter(
-      (obj) =>
-        obj.status === "undetermined" &&
-        obj.time_in_undetermined > REMOVAL_TIMEOUT
+      (obj) => obj.status === "undetermined" && obj.time_in_undetermined > 15
     );
 
     if (itemsToRemove.length > 0) {
