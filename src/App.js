@@ -126,9 +126,10 @@ const LiveDetection = () => {
   const getContextualInstructions = () => {
     const confirmedCount = Object.keys(confirmedObjects).length;
     const undeterminedCount = undeterminedObjects.length;
+    const itemsInFrame = trackedObjects.length;
 
     // No items in scanning area
-    if (confirmedCount === 0 && undeterminedCount === 0) {
+    if (itemsInFrame === 0) {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
 
