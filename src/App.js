@@ -125,46 +125,45 @@ const LiveDetection = () => {
 
   const getContextualInstructions = () => {
     const confirmedCount = Object.keys(confirmedObjects).length;
-    const totalCount = confirmedCount + undeterminedObjects.length;
+    const undeterminedCount = undeterminedObjects.length;
 
     // No items in scanning area
-    if (confirmedCount === 0 && undeterminedObjects.length === 0) {
+    if (confirmedCount === 0 && undeterminedCount === 0) {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
 
-    // Check for problematic undetermined items
-    const problematicItems = trackedObjects.filter(
-      (obj) => obj.status === "undetermined" && obj.time_in_undetermined > 7
+    // Get confirmed and undetermined items currently in frame
+    const confirmedInFrame = trackedObjects.filter(
+      (obj) => obj.status === "confirmed"
+    );
+    const undeterminedInFrame = trackedObjects.filter(
+      (obj) => obj.status === "undetermined"
     );
 
-    // Items that should be removed
-    const itemsToRemove = trackedObjects.filter(
-      (obj) => obj.status === "undetermined" && obj.time_in_undetermined > 15
+    // Check for items taking too long (10 seconds) with no confirmations
+    const longUndeterminedItems = undeterminedInFrame.filter(
+      (obj) => obj.time_in_undetermined > 10
     );
-
-    if (itemsToRemove.length > 0) {
-      return "Some items cannot be confirmed. Please remove them and try again with valid items.";
+    if (longUndeterminedItems.length > 0 && confirmedInFrame.length === 0) {
+      return "Items are taking longer than usual to confirm. Please reposition the yellow-boxed items to ensure they're clearly visible to the camera. If you believe we have detected something wrong, click the help button and an assistant will come help you right away. Sorry for this inconvenience.";
     }
 
-    if (problematicItems.length > 0) {
-      // Check if there are any confirmed items currently in the scanning area
-      const confirmedItemsInFrame = trackedObjects.filter(
-        (obj) => obj.status === "confirmed"
-      ).length;
-
-      if (confirmedItemsInFrame > 0) {
+    // Check if we have both confirmed and undetermined items in frame for more than 3 seconds
+    if (confirmedInFrame.length > 0 && undeterminedInFrame.length > 0) {
+      const oldestConfirmation = Math.min(
+        ...confirmedInFrame.map((obj) => obj.confirmed_time)
+      );
+      if (Date.now() - oldestConfirmation > 3000) {
         return "Please place confirmed items in the bagging area to clear the scanning area, then reposition the yellow-boxed items for better detection.";
-      } else {
-        return "Items are taking longer than usual to confirm. Please reposition the yellow-boxed items to ensure they're clearly visible to the camera.";
       }
     }
 
-    // All items confirmed
-    if (undeterminedObjects.length === 0 && confirmedCount > 0) {
+    // All items in current frame are confirmed
+    if (undeterminedInFrame.length === 0 && confirmedInFrame.length > 0) {
       return "All items confirmed. Place items into the bagging area and continue to scan or proceed with payment.";
     }
 
-    // Default message for items being processed
+    // Default scanning message
     return "Scanning in progress. Please keep items steady...";
   };
 
