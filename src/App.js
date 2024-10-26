@@ -10,9 +10,6 @@ const LiveDetection = () => {
   const [trackedObjects, setTrackedObjects] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [totalPrice, setTotalPrice] = useState(0);
-  const CONFIRMATION_TIMEOUT = 7000; // 7 seconds in milliseconds
-  const REMOVAL_TIMEOUT = 15000; // 15 seconds in milliseconds
-  const lastInstructionTime = useRef(0);
 
   let frameCount = 0;
   let lastTime = Date.now();
@@ -22,8 +19,24 @@ const LiveDetection = () => {
     const socket = io(BACKEND_URL, {
       secure: true,
       rejectUnauthorized: false,
-      transport: ["websocket"],
+      transports: ["websocket", "polling"],
+      upgrade: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 60000,
+      pingTimeout: 60000,
+      pingInterval: 25000,
     });
+
+    socket.on("connect_error", (error) => {
+      console.log("Connection Error:", error);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("Disconnected:", reason);
+    });
+
     socket.on("detection_results", (data) => {
       const img = new Image();
       img.onload = () => {
