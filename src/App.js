@@ -46,9 +46,9 @@ const LiveDetection = () => {
       img.src = URL.createObjectURL(
         new Blob([data.frame], { type: "image/jpeg" })
       );
-      setTrackedObjects(data.tracked_objects);
-      setConfirmedObjects(data.confirmed_objects);
-      setUndeterminedObjects(data.undetermined_objects);
+      setTrackedObjects(data.tracked_objects || []);
+      setConfirmedObjects(data.confirmed_objects || {});
+      setUndeterminedObjects(data.undetermined_objects || []);
     });
 
     return () => socket.disconnect();
@@ -137,9 +137,9 @@ const LiveDetection = () => {
   };
 
   const getContextualInstructions = () => {
-    const confirmedCount = Object.keys(confirmedObjects).length;
-    const undeterminedCount = undeterminedObjects.length;
-    const itemsInFrame = trackedObjects.length;
+    const confirmedCount = Object.keys(confirmedObjects || {}).length;
+    const undeterminedCount = undeterminedObjects?.length || 0;
+    const itemsInFrame = trackedObjects?.length || 0;
 
     // No items in scanning area
     if (itemsInFrame === 0) {
@@ -148,10 +148,10 @@ const LiveDetection = () => {
 
     // Get confirmed and undetermined items currently in frame
     const confirmedInFrame = trackedObjects.filter(
-      (obj) => obj.status === "confirmed"
+      (obj) => obj.status === "confirmed" || []
     );
     const undeterminedInFrame = trackedObjects.filter(
-      (obj) => obj.status === "undetermined"
+      (obj) => obj.status === "undetermined" || []
     );
 
     // Check for items taking too long (10 seconds) with no confirmations
@@ -264,7 +264,7 @@ const LiveDetection = () => {
           </div>
           <button
             onClick={handleCheckout}
-            disabled={undeterminedObjects.length > 0}
+            disabled={undeterminedObjects?.length > 0}
             className={`mt-4 p-2 text-white font-bold rounded ${
               undeterminedObjects.length > 0
                 ? "bg-gray-400 cursor-not-allowed"
