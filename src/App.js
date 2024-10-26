@@ -13,31 +13,57 @@ const LiveDetection = () => {
   const lastInstructionRef = useRef("");
   const lastConfirmedTimeRef = useRef({});
   const scanStartTimeRef = useRef(null);
+  const confirmedItemsRef = useRef({});
 
   let frameCount = 0;
   let lastTime = Date.now();
   const BACKEND_URL = "https://192.168.137.154:5000";
 
   const updateShoppingCart = useCallback((tracked, confirmed) => {
-    // Create a new cart state combining currently tracked confirmed items
-    // and previously confirmed items that are no longer in frame
-    const newCart = { ...confirmed };
+    const newCart = { ...confirmedItemsRef.current };
 
-    // Add newly confirmed items that are still in frame
+    // Process tracked objects that are confirmed
     tracked.forEach((obj) => {
       if (obj.status === "confirmed") {
         const itemName = obj.class;
+        const itemDetails = obj.item_details;
+
         if (!newCart[itemName]) {
           newCart[itemName] = {
             quantity: 1,
-            unit_price: 0, // Will be updated when backend sends the details
-            image_path: "",
+            unit_price: itemDetails.unit_price,
+            image_path: itemDetails.image_path,
+            last_seen: Date.now(),
           };
         } else {
+          // Update existing item
           newCart[itemName].quantity += 1;
+          newCart[itemName].last_seen = Date.now();
+          // Update details if they weren't available before
+          if (!newCart[itemName].unit_price && itemDetails.unit_price) {
+            newCart[itemName].unit_price = itemDetails.unit_price;
+          }
+          if (!newCart[itemName].image_path && itemDetails.image_path) {
+            newCart[itemName].image_path = itemDetails.image_path;
+          }
         }
-        // Update last confirmed time for this object
-        lastConfirmedTimeRef.current[obj.id] = Date.now();
+
+        // Store in ref for persistence
+        confirmedItemsRef.current = newCart;
+      }
+    });
+
+    // Keep confirmed items in the cart even when they leave the frame
+    Object.entries(confirmed).forEach(([id, obj]) => {
+      const itemName = obj.class_name;
+      if (newCart[itemName]) {
+        // Update details if they weren't available before
+        if (!newCart[itemName].unit_price && obj.item_details?.unit_price) {
+          newCart[itemName].unit_price = obj.item_details.unit_price;
+        }
+        if (!newCart[itemName].image_path && obj.item_details?.image_path) {
+          newCart[itemName].image_path = obj.item_details.image_path;
+        }
       }
     });
 
@@ -323,21 +349,35 @@ const LiveDetection = () => {
                       className="border-b"
                     >
                       <td className="p-2">
-                        <img
-                          src={`${BACKEND_URL}/Assets/${item.image_path
-                            .split("/")
-                            .pop()}`}
-                          alt={itemName}
-                          className="w-16 h-16 object-cover rounded-lg"
-                        />
+                        {item.image_path ? (
+                          <img
+                            src={`${BACKEND_URL}/Assets/${item.image_path
+                              .split("/")
+                              .pop()}`}
+                            alt={itemName}
+                            className="w-16 h-16 object-cover rounded-lg"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
+                            <span className="text-gray-400">No image</span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-2 font-medium">{itemName}</td>
                       <td className="p-2 text-center">{item.quantity}</td>
                       <td className="p-2 text-right">
-                        ${item.unit_price?.toFixed(2) || "N/A"}
+                        {item.unit_price ? (
+                          `$${item.unit_price.toFixed(2)}`
+                        ) : (
+                          <span className="text-gray-400">Loading...</span>
+                        )}
                       </td>
                       <td className="p-2 text-right font-medium">
-                        ${(item.quantity * (item.unit_price || 0)).toFixed(2)}
+                        {item.unit_price ? (
+                          `$${(item.quantity * item.unit_price).toFixed(2)}`
+                        ) : (
+                          <span className="text-gray-400">Loading...</span>
+                        )}
                       </td>
                     </motion.tr>
                   ))}
