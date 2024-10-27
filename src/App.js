@@ -79,6 +79,7 @@ const LiveDetection = () => {
         new Blob([data.frame], { type: "image/jpeg" })
       );
 
+      setUnstableObjects(new Set(data.unstable_objects || []));
       // Update tracked objects and trigger cart update
       setTrackedObjects(data.tracked_objects || []);
       updateShoppingCart(
@@ -276,11 +277,13 @@ const LiveDetection = () => {
         ctx.fill();
       }
       // Draw ignore button for unstable detections
-      if (isUnstable) {
+      if (isUnstable && obj.unstable_duration > 5) {
+        // Only show ignore button after 5 seconds of instability
         const buttonWidth = 60;
         const buttonHeight = 24;
         const buttonX = x1;
         const buttonY = y2 + 10;
+
         // Draw button background
         ctx.fillStyle = "rgba(239, 68, 68, 0.8)";
         roundRect(ctx, buttonX, buttonY, buttonWidth, buttonHeight, 4);
@@ -327,6 +330,7 @@ const LiveDetection = () => {
       }
     });
   };
+
   // Helper function to draw rounded rectangles
   const roundRect = (ctx, x, y, width, height, radius) => {
     ctx.beginPath();
