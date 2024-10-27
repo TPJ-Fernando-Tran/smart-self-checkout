@@ -8,19 +8,20 @@ const LiveDetection = () => {
   const [confirmedObjects, setConfirmedObjects] = useState({});
   const [undeterminedObjects, setUndeterminedObjects] = useState([]);
   const [trackedObjects, setTrackedObjects] = useState([]);
+  const [unstableZones, setUnstableZones] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [totalPrice, setTotalPrice] = useState(0);
   const lastInstructionRef = useRef("");
   const lastConfirmedTimeRef = useRef({});
   const scanStartTimeRef = useRef(null);
+  const unstableMessageShownRef = useRef({});
+  const socketRef = useRef(null);
 
   let frameCount = 0;
   let lastTime = Date.now();
   const BACKEND_URL = "https://192.168.137.154:5000";
 
   const updateShoppingCart = useCallback((tracked, confirmed) => {
-    // Create a new cart state combining currently tracked confirmed items
-    // and previously confirmed items that are no longer in frame
     const newCart = { ...confirmed };
 
     // Add newly confirmed items that are still in frame
@@ -30,13 +31,12 @@ const LiveDetection = () => {
         if (!newCart[itemName]) {
           newCart[itemName] = {
             quantity: 1,
-            unit_price: 0, // Will be updated when backend sends the details
+            unit_price: 0,
             image_path: "",
           };
         } else {
           newCart[itemName].quantity += 1;
         }
-        // Update last confirmed time for this object
         lastConfirmedTimeRef.current[obj.id] = Date.now();
       }
     });
@@ -45,7 +45,7 @@ const LiveDetection = () => {
   }, []);
 
   useEffect(() => {
-    const socket = io(BACKEND_URL, {
+    socketRef.current = io(BACKEND_URL, {
       secure: true,
       rejectUnauthorized: false,
       transports: ["websocket", "polling"],
@@ -58,15 +58,24 @@ const LiveDetection = () => {
       pingInterval: 25000,
     });
 
-    socket.on("connect_error", (error) => {
+    socketRef.current.on("connect_error", (error) => {
       console.log("Connection Error:", error);
     });
 
-    socket.on("disconnect", (reason) => {
+    socketRef.current.on("disconnect", (reason) => {
       console.log("Disconnected:", reason);
     });
 
-    socket.on("detection_results", (data) => {
+    socketRef.current.on("zone_ignored", (response) => {
+      if (response.status === "success") {
+        // Remove the zone from unstable zones
+        setUnstableZones((prev) =>
+          prev.filter((zone) => zone.zone_key !== response.zone_key)
+        );
+      }
+    });
+
+    socketRef.current.on("detection_results", (data) => {
       const img = new Image();
       img.onload = () => {
         drawDetections(img, data.tracked_objects);
@@ -76,15 +85,14 @@ const LiveDetection = () => {
         new Blob([data.frame], { type: "image/jpeg" })
       );
 
-      // Update tracked objects and trigger cart update
       setTrackedObjects(data.tracked_objects || []);
       updateShoppingCart(
         data.tracked_objects || [],
         data.confirmed_objects || {}
       );
       setUndeterminedObjects(data.undetermined_objects || []);
+      setUnstableZones(data.unstable_zones || []);
 
-      // Update scan start time if needed
       if (data.tracked_objects?.length > 0 && !scanStartTimeRef.current) {
         scanStartTimeRef.current = Date.now();
       } else if (data.tracked_objects?.length === 0) {
@@ -92,7 +100,11 @@ const LiveDetection = () => {
       }
     });
 
-    return () => socket.disconnect();
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
   }, [updateShoppingCart]);
 
   useEffect(() => {
@@ -103,13 +115,12 @@ const LiveDetection = () => {
       lastInstructionRef.current = newInstruction;
     }
 
-    // Calculate total price
     const total = Object.entries(confirmedObjects).reduce(
       (sum, [_, item]) => sum + item.quantity * (item.unit_price || 0),
       0
     );
     setTotalPrice(total);
-  }, [confirmedObjects, undeterminedObjects, trackedObjects]);
+  }, [confirmedObjects, undeterminedObjects, trackedObjects, unstableZones]);
 
   const getContextualInstructions = () => {
     const itemsInFrame = trackedObjects.length;
@@ -130,7 +141,7 @@ const LiveDetection = () => {
       if (unresolvedZones.length > 0) {
         const zone = unresolvedZones[0];
         unstableMessageShownRef.current[zone.zone_key] = true;
-        return `We're having difficulty identifying an item in the scanning area. This might be a false detection. You can either reposition the item or click 'Ignore' to exclude this detection.`;
+        return "We're having difficulty identifying an item in the scanning area. This might be a false detection. You can either reposition the item or click 'Ignore' to exclude this detection.";
       }
     }
 
@@ -178,93 +189,10 @@ const LiveDetection = () => {
     }
   };
 
-  const drawDetections = (img, trackedObjects) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const handleIgnoreZone = useCallback((zoneKey) => {
+    socketRef.current?.emit("ignore_zone", { zone_key: zoneKey });
+  }, []);
 
-    const ctx = canvas.getContext("2d");
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
-
-    trackedObjects.forEach((obj) => {
-      const [x1, y1, x2, y2] = obj.bbox;
-      const color = obj.status === "confirmed" ? "#22c55e" : "#eab308"; // Green for confirmed, yellow for undetermined
-
-      // Draw box
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-
-      // Draw label background
-      const text = `${obj.class} ${(obj.confidence * 100).toFixed(1)}%`;
-      ctx.font = "16px Arial";
-      const textWidth = ctx.measureText(text).width;
-      const padding = 4;
-
-      // Position text and background
-      let textX = x1;
-      let textY = y1 - 5;
-      if (textY < 20) textY = y2 + 20;
-      if (textX + textWidth > canvas.width)
-        textX = canvas.width - textWidth - padding;
-
-      // Draw background with rounded corners
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      const backgroundHeight = 24;
-      const radius = 4;
-      roundRect(
-        ctx,
-        textX - padding,
-        textY - 20,
-        textWidth + padding * 2,
-        backgroundHeight,
-        radius
-      );
-      ctx.fill();
-
-      // Draw text
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(text, textX, textY - 4);
-
-      // Draw progress bar for undetermined objects
-      if (obj.status === "undetermined") {
-        const progressBarHeight = 4;
-        const progressBarY = y2 + 5;
-        const progressBarWidth = x2 - x1;
-        const progress = obj.progress || 0;
-
-        // Background
-        ctx.fillStyle = "rgba(239, 68, 68, 0.5)"; // Red background
-        ctx.beginPath();
-        roundRect(
-          ctx,
-          x1,
-          progressBarY,
-          progressBarWidth,
-          progressBarHeight,
-          2
-        );
-        ctx.fill();
-
-        // Progress
-        ctx.fillStyle = "rgba(34, 197, 94, 0.9)"; // Green progress
-        ctx.beginPath();
-        roundRect(
-          ctx,
-          x1,
-          progressBarY,
-          (progressBarWidth * progress) / 100,
-          progressBarHeight,
-          2
-        );
-        ctx.fill();
-      }
-    });
-  };
-
-  // Helper function to draw rounded rectangles
   const roundRect = (ctx, x, y, width, height, radius) => {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -279,6 +207,86 @@ const LiveDetection = () => {
     ctx.closePath();
   };
 
+  const drawDetections = (img, trackedObjects) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+
+    trackedObjects.forEach((obj) => {
+      const [x1, y1, x2, y2] = obj.bbox;
+      const color = obj.status === "confirmed" ? "#22c55e" : "#eab308";
+
+      // Draw box
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      // Draw label background
+      const text = `${obj.class} ${(obj.confidence * 100).toFixed(1)}%`;
+      ctx.font = "16px Arial";
+      const textWidth = ctx.measureText(text).width;
+      const padding = 4;
+
+      let textX = x1;
+      let textY = y1 - 5;
+      if (textY < 20) textY = y2 + 20;
+      if (textX + textWidth > canvas.width)
+        textX = canvas.width - textWidth - padding;
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      const backgroundHeight = 24;
+      const radius = 4;
+      roundRect(
+        ctx,
+        textX - padding,
+        textY - 20,
+        textWidth + padding * 2,
+        backgroundHeight,
+        radius
+      );
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(text, textX, textY - 4);
+
+      if (obj.status === "undetermined") {
+        const progressBarHeight = 4;
+        const progressBarY = y2 + 5;
+        const progressBarWidth = x2 - x1;
+        const progress = obj.progress || 0;
+
+        ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
+        ctx.beginPath();
+        roundRect(
+          ctx,
+          x1,
+          progressBarY,
+          progressBarWidth,
+          progressBarHeight,
+          2
+        );
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
+        ctx.beginPath();
+        roundRect(
+          ctx,
+          x1,
+          progressBarY,
+          (progressBarWidth * progress) / 100,
+          progressBarHeight,
+          2
+        );
+        ctx.fill();
+      }
+    });
+  };
+
   const updateFPS = () => {
     frameCount++;
     const currentTime = Date.now();
@@ -289,12 +297,13 @@ const LiveDetection = () => {
     }
   };
 
-  const handleIgnoreZone = (zoneKey) => {
-    socket.emit("ignore_zone", { zone_key: zoneKey });
+  const handleCheckout = () => {
+    console.log("Proceeding to checkout");
   };
 
   const renderUnstableZones = () => {
     if (unstableZones.length === 0) return null;
+
     return (
       <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
         <h3 className="text-lg font-semibold mb-2">Flagged Items</h3>
@@ -324,11 +333,6 @@ const LiveDetection = () => {
         </div>
       </div>
     );
-  };
-
-  const handleCheckout = () => {
-    // Implement checkout logic here
-    console.log("Proceeding to checkout");
   };
 
   return (
