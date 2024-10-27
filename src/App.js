@@ -176,15 +176,20 @@ const LiveDetection = () => {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
 
+    // Set canvas dimensions to match image
     canvas.width = img.width;
     canvas.height = img.height;
+
+    // Clear canvas and draw image
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
 
+    // Draw bounding boxes and labels
     trackedObjects.forEach((obj) => {
       const [x1, y1, x2, y2] = obj.bbox;
       const color = obj.status === "confirmed" ? "#22c55e" : "#eab308";
 
-      // Draw box
+      // Draw bounding box
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
@@ -192,11 +197,13 @@ const LiveDetection = () => {
       // Draw label
       const text = `${obj.class} ${(obj.confidence * 100).toFixed(1)}%`;
       ctx.font = "16px Arial";
-      const textWidth = ctx.measureText(text).width;
+      const textMetrics = ctx.measureText(text);
+      const textWidth = textMetrics.width;
       const padding = 4;
-      let textX = x1;
-      let textY = y1 - 5;
 
+      // Position label
+      let textX = x1;
+      let textY = y1 - 10;
       if (textY < 20) textY = y2 + 20;
       if (textX + textWidth > canvas.width) {
         textX = canvas.width - textWidth - padding;
@@ -204,19 +211,11 @@ const LiveDetection = () => {
 
       // Draw label background
       ctx.fillStyle = color;
-      roundRect(
-        ctx,
-        textX - padding,
-        textY - 20,
-        textWidth + padding * 2,
-        24,
-        4
-      );
-      ctx.fill();
+      ctx.fillRect(textX - padding, textY - 16, textWidth + padding * 2, 20);
 
       // Draw label text
       ctx.fillStyle = "#ffffff";
-      ctx.fillText(text, textX, textY - 4);
+      ctx.fillText(text, textX, textY);
 
       // Draw progress bar for undetermined objects
       if (obj.status === "undetermined") {
@@ -227,27 +226,16 @@ const LiveDetection = () => {
 
         // Background
         ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
-        roundRect(
-          ctx,
-          x1,
-          progressBarY,
-          progressBarWidth,
-          progressBarHeight,
-          2
-        );
-        ctx.fill();
+        ctx.fillRect(x1, progressBarY, progressBarWidth, progressBarHeight);
 
         // Progress
         ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
-        roundRect(
-          ctx,
+        ctx.fillRect(
           x1,
           progressBarY,
           (progressBarWidth * progress) / 100,
-          progressBarHeight,
-          2
+          progressBarHeight
         );
-        ctx.fill();
       }
     });
   };
@@ -264,7 +252,9 @@ const LiveDetection = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
+      {/* Left side - Camera Feed and Instructions */}
       <div className="flex-1 flex flex-col">
+        {/* Camera Feed with Bounding Boxes */}
         <div className="relative flex-1 bg-black">
           <canvas
             ref={canvasRef}
@@ -274,33 +264,53 @@ const LiveDetection = () => {
             FPS: {fps}
           </div>
         </div>
+        {/* Instructions Panel */}
         <div className="bg-white p-4 shadow-lg">
           <div className="text-lg font-semibold text-gray-800">
             {instruction}
           </div>
         </div>
       </div>
+
+      {/* Right side - Shopping Cart */}
       <div className="w-96 bg-white shadow-lg p-4 overflow-y-auto">
         <h2 className="text-2xl font-bold mb-4">Shopping Cart</h2>
-        {Object.entries(confirmedObjects).map(([itemName, item]) => (
-          <div
-            key={itemName}
-            className="flex items-center justify-between mb-4 p-2 bg-gray-50 rounded"
-          >
-            <div>
-              <div className="font-semibold">{itemName}</div>
-              <div className="text-sm text-gray-600">
-                Quantity: {item.quantity}
-              </div>
-            </div>
-            <div className="text-right">
-              <div>${item.unit_price?.toFixed(2) || "N/A"}</div>
-              <div className="font-semibold">
-                ${(item.quantity * (item.unit_price || 0)).toFixed(2)}
-              </div>
-            </div>
-          </div>
-        ))}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
+                  Item
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
+                  Qty
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
+                  Price
+                </th>
+                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {Object.entries(confirmedObjects).map(([itemName, item]) => (
+                <tr key={itemName}>
+                  <td className="px-4 py-2">{itemName}</td>
+                  <td className="px-4 py-2">{item.quantity}</td>
+                  <td className="px-4 py-2">
+                    ${item.unit_price?.toFixed(2) || "N/A"}
+                  </td>
+                  <td className="px-4 py-2">
+                    ${(item.quantity * (item.unit_price || 0)).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Total and Checkout Button */}
         <div className="mt-4 pt-4 border-t">
           <div className="flex justify-between items-center mb-4">
             <span className="text-xl font-bold">Total:</span>
