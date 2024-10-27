@@ -121,6 +121,19 @@ const LiveDetection = () => {
     );
     const currentTime = Date.now();
 
+    // Handle unstable detections first
+    if (unstableZones.length > 0) {
+      const unresolvedZones = unstableZones.filter(
+        (zone) => !unstableMessageShownRef.current[zone.zone_key]
+      );
+
+      if (unresolvedZones.length > 0) {
+        const zone = unresolvedZones[0];
+        unstableMessageShownRef.current[zone.zone_key] = true;
+        return `We're having difficulty identifying an item in the scanning area. This might be a false detection. You can either reposition the item or click 'Ignore' to exclude this detection.`;
+      }
+    }
+
     // No items in scanning area
     if (itemsInFrame === 0) {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
@@ -276,6 +289,43 @@ const LiveDetection = () => {
     }
   };
 
+  const handleIgnoreZone = (zoneKey) => {
+    socket.emit("ignore_zone", { zone_key: zoneKey });
+  };
+
+  const renderUnstableZones = () => {
+    if (unstableZones.length === 0) return null;
+    return (
+      <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
+        <h3 className="text-lg font-semibold mb-2">Flagged Items</h3>
+        <div className="space-y-2">
+          {unstableZones.map((zone) => (
+            <div
+              key={zone.zone_key}
+              className="flex justify-between items-center p-2 bg-white rounded shadow-sm"
+            >
+              <div>
+                <span className="font-medium">Unstable Detection</span>
+                <p className="text-sm text-gray-600">
+                  Detected as:{" "}
+                  {Object.entries(zone.classes)
+                    .map(([cls, count]) => `${cls} (${count}x)`)
+                    .join(", ")}
+                </p>
+              </div>
+              <button
+                onClick={() => handleIgnoreZone(zone.zone_key)}
+                className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+              >
+                Ignore
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const handleCheckout = () => {
     // Implement checkout logic here
     console.log("Proceeding to checkout");
@@ -345,6 +395,7 @@ const LiveDetection = () => {
               </tbody>
             </table>
           </div>
+          {renderUnstableZones()}
           <div className="mt-4 p-4 bg-white rounded-lg shadow-sm">
             <div className="text-xl font-bold text-right">
               Total: ${totalPrice.toFixed(2)}
