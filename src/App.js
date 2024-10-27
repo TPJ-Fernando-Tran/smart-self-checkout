@@ -8,20 +8,22 @@ const LiveDetection = () => {
   const [confirmedObjects, setConfirmedObjects] = useState({});
   const [undeterminedObjects, setUndeterminedObjects] = useState([]);
   const [trackedObjects, setTrackedObjects] = useState([]);
-  const [unstableZones, setUnstableZones] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [totalPrice, setTotalPrice] = useState(0);
   const lastInstructionRef = useRef("");
   const lastConfirmedTimeRef = useRef({});
   const scanStartTimeRef = useRef(null);
-  const unstableMessageShownRef = useRef({});
-  const socketRef = useRef(null);
+  const [unstableObjects, setUnstableObjects] = useState(new Set());
+  const [ignoredLocations, setIgnoredLocations] = useState(new Set());
+  const unstableTimeoutRef = useRef({});
 
   let frameCount = 0;
   let lastTime = Date.now();
   const BACKEND_URL = "https://192.168.137.154:5000";
 
   const updateShoppingCart = useCallback((tracked, confirmed) => {
+    // Create a new cart state combining currently tracked confirmed items
+    // and previously confirmed items that are no longer in frame
     const newCart = { ...confirmed };
 
     // Add newly confirmed items that are still in frame
@@ -31,12 +33,13 @@ const LiveDetection = () => {
         if (!newCart[itemName]) {
           newCart[itemName] = {
             quantity: 1,
-            unit_price: 0,
+            unit_price: 0, // Will be updated when backend sends the details
             image_path: "",
           };
         } else {
           newCart[itemName].quantity += 1;
         }
+        // Update last confirmed time for this object
         lastConfirmedTimeRef.current[obj.id] = Date.now();
       }
     });
@@ -45,7 +48,7 @@ const LiveDetection = () => {
   }, []);
 
   useEffect(() => {
-    socketRef.current = io(BACKEND_URL, {
+    const socket = io(BACKEND_URL, {
       secure: true,
       rejectUnauthorized: false,
       transports: ["websocket", "polling"],
@@ -58,24 +61,15 @@ const LiveDetection = () => {
       pingInterval: 25000,
     });
 
-    socketRef.current.on("connect_error", (error) => {
+    socket.on("connect_error", (error) => {
       console.log("Connection Error:", error);
     });
 
-    socketRef.current.on("disconnect", (reason) => {
+    socket.on("disconnect", (reason) => {
       console.log("Disconnected:", reason);
     });
 
-    socketRef.current.on("zone_ignored", (response) => {
-      if (response.status === "success") {
-        // Remove the zone from unstable zones
-        setUnstableZones((prev) =>
-          prev.filter((zone) => zone.zone_key !== response.zone_key)
-        );
-      }
-    });
-
-    socketRef.current.on("detection_results", (data) => {
+    socket.on("detection_results", (data) => {
       const img = new Image();
       img.onload = () => {
         drawDetections(img, data.tracked_objects);
@@ -85,14 +79,15 @@ const LiveDetection = () => {
         new Blob([data.frame], { type: "image/jpeg" })
       );
 
+      // Update tracked objects and trigger cart update
       setTrackedObjects(data.tracked_objects || []);
       updateShoppingCart(
         data.tracked_objects || [],
         data.confirmed_objects || {}
       );
       setUndeterminedObjects(data.undetermined_objects || []);
-      setUnstableZones(data.unstable_zones || []);
 
+      // Update scan start time if needed
       if (data.tracked_objects?.length > 0 && !scanStartTimeRef.current) {
         scanStartTimeRef.current = Date.now();
       } else if (data.tracked_objects?.length === 0) {
@@ -100,11 +95,7 @@ const LiveDetection = () => {
       }
     });
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
+    return () => socket.disconnect();
   }, [updateShoppingCart]);
 
   useEffect(() => {
@@ -115,12 +106,13 @@ const LiveDetection = () => {
       lastInstructionRef.current = newInstruction;
     }
 
+    // Calculate total price
     const total = Object.entries(confirmedObjects).reduce(
       (sum, [_, item]) => sum + item.quantity * (item.unit_price || 0),
       0
     );
     setTotalPrice(total);
-  }, [confirmedObjects, undeterminedObjects, trackedObjects, unstableZones]);
+  }, [confirmedObjects, undeterminedObjects, trackedObjects]);
 
   const getContextualInstructions = () => {
     const itemsInFrame = trackedObjects.length;
@@ -130,19 +122,13 @@ const LiveDetection = () => {
     const undeterminedInFrame = trackedObjects.filter(
       (obj) => obj.status === "undetermined"
     );
+    const unstableInFrame = trackedObjects.filter((obj) =>
+      unstableObjects.has(obj.location_hash)
+    );
     const currentTime = Date.now();
 
-    // Handle unstable detections first
-    if (unstableZones.length > 0) {
-      const unresolvedZones = unstableZones.filter(
-        (zone) => !unstableMessageShownRef.current[zone.zone_key]
-      );
-
-      if (unresolvedZones.length > 0) {
-        const zone = unresolvedZones[0];
-        unstableMessageShownRef.current[zone.zone_key] = true;
-        return "We're having difficulty identifying an item in the scanning area. This might be a false detection. You can either reposition the item or click 'Ignore' to exclude this detection.";
-      }
+    if (unstableInFrame.length > 0) {
+      return "We're experiencing difficulties identifying some items. Please reposition them or click 'Ignore' below their bounding boxes to exclude them from scanning.";
     }
 
     // No items in scanning area
@@ -189,22 +175,13 @@ const LiveDetection = () => {
     }
   };
 
-  const handleIgnoreZone = useCallback((zoneKey) => {
-    socketRef.current?.emit("ignore_zone", { zone_key: zoneKey });
-  }, []);
-
-  const roundRect = (ctx, x, y, width, height, radius) => {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
+  const handleIgnoreLocation = (locationHash) => {
+    setIgnoredLocations((prev) => new Set([...prev, locationHash]));
+    // Clear any unstable timeout for this location
+    if (unstableTimeoutRef.current[locationHash]) {
+      clearTimeout(unstableTimeoutRef.current[locationHash]);
+      delete unstableTimeoutRef.current[locationHash];
+    }
   };
 
   const drawDetections = (img, trackedObjects) => {
@@ -217,8 +194,16 @@ const LiveDetection = () => {
     ctx.drawImage(img, 0, 0);
 
     trackedObjects.forEach((obj) => {
+      // Skip drawing ignored locations
+      if (ignoredLocations.has(obj.location_hash)) return;
+
       const [x1, y1, x2, y2] = obj.bbox;
-      const color = obj.status === "confirmed" ? "#22c55e" : "#eab308";
+      const isUnstable = unstableObjects.has(obj.location_hash);
+      const color = isUnstable
+        ? "#ef4444" // Red for unstable
+        : obj.status === "confirmed"
+        ? "#22c55e" // Green for confirmed
+        : "#eab308"; // Yellow for undetermined
 
       // Draw box
       ctx.strokeStyle = color;
@@ -231,12 +216,14 @@ const LiveDetection = () => {
       const textWidth = ctx.measureText(text).width;
       const padding = 4;
 
+      // Position text and background
       let textX = x1;
       let textY = y1 - 5;
       if (textY < 20) textY = y2 + 20;
       if (textX + textWidth > canvas.width)
         textX = canvas.width - textWidth - padding;
 
+      // Draw background with rounded corners
       ctx.fillStyle = color;
       ctx.beginPath();
       const backgroundHeight = 24;
@@ -251,16 +238,19 @@ const LiveDetection = () => {
       );
       ctx.fill();
 
+      // Draw text
       ctx.fillStyle = "#ffffff";
       ctx.fillText(text, textX, textY - 4);
 
+      // Draw progress bar for undetermined objects
       if (obj.status === "undetermined") {
         const progressBarHeight = 4;
         const progressBarY = y2 + 5;
         const progressBarWidth = x2 - x1;
         const progress = obj.progress || 0;
 
-        ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
+        // Background
+        ctx.fillStyle = "rgba(239, 68, 68, 0.5)"; // Red background
         ctx.beginPath();
         roundRect(
           ctx,
@@ -272,7 +262,8 @@ const LiveDetection = () => {
         );
         ctx.fill();
 
-        ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
+        // Progress
+        ctx.fillStyle = "rgba(34, 197, 94, 0.9)"; // Green progress
         ctx.beginPath();
         roundRect(
           ctx,
@@ -284,7 +275,71 @@ const LiveDetection = () => {
         );
         ctx.fill();
       }
+      // Draw ignore button for unstable detections
+      if (isUnstable) {
+        const buttonWidth = 60;
+        const buttonHeight = 24;
+        const buttonX = x1;
+        const buttonY = y2 + 10;
+        // Draw button background
+        ctx.fillStyle = "rgba(239, 68, 68, 0.8)";
+        roundRect(ctx, buttonX, buttonY, buttonWidth, buttonHeight, 4);
+        ctx.fill();
+
+        // Draw button text
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "12px Arial";
+        ctx.fillText("Ignore", buttonX + 12, buttonY + 16);
+
+        // Store button coordinates for click handling
+        obj.ignoreButton = {
+          x: buttonX,
+          y: buttonY,
+          width: buttonWidth,
+          height: buttonHeight,
+        };
+      }
     });
+  };
+
+  // Add click handler for ignore buttons
+  const handleCanvasClick = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    trackedObjects.forEach((obj) => {
+      if (obj.ignoreButton) {
+        const button = obj.ignoreButton;
+        if (
+          x * scaleX >= button.x &&
+          x * scaleX <= button.x + button.width &&
+          y * scaleY >= button.y &&
+          y * scaleY <= button.y + button.height
+        ) {
+          handleIgnoreLocation(obj.location_hash);
+        }
+      }
+    });
+  };
+  // Helper function to draw rounded rectangles
+  const roundRect = (ctx, x, y, width, height, radius) => {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
   };
 
   const updateFPS = () => {
@@ -298,42 +353,18 @@ const LiveDetection = () => {
   };
 
   const handleCheckout = () => {
+    // Implement checkout logic here
     console.log("Proceeding to checkout");
   };
 
-  const renderUnstableZones = () => {
-    if (unstableZones.length === 0) return null;
-
-    return (
-      <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
-        <h3 className="text-lg font-semibold mb-2">Flagged Items</h3>
-        <div className="space-y-2">
-          {unstableZones.map((zone) => (
-            <div
-              key={zone.zone_key}
-              className="flex justify-between items-center p-2 bg-white rounded shadow-sm"
-            >
-              <div>
-                <span className="font-medium">Unstable Detection</span>
-                <p className="text-sm text-gray-600">
-                  Detected as:{" "}
-                  {Object.entries(zone.classes)
-                    .map(([cls, count]) => `${cls} (${count}x)`)
-                    .join(", ")}
-                </p>
-              </div>
-              <button
-                onClick={() => handleIgnoreZone(zone.zone_key)}
-                className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded"
-              >
-                Ignore
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  // Add canvas click listener
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.addEventListener("click", handleCanvasClick);
+      return () => canvas.removeEventListener("click", handleCanvasClick);
+    }
+  }, [trackedObjects]);
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
@@ -399,7 +430,6 @@ const LiveDetection = () => {
               </tbody>
             </table>
           </div>
-          {renderUnstableZones()}
           <div className="mt-4 p-4 bg-white rounded-lg shadow-sm">
             <div className="text-xl font-bold text-right">
               Total: ${totalPrice.toFixed(2)}
