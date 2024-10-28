@@ -67,6 +67,15 @@ const LiveDetection = () => {
     });
 
     socketRef.current.on("detection_results", (data) => {
+      console.log("Received tracked objects:", data.tracked_objects);
+      console.log("Frame status:", data.frame_status);
+      console.log(
+        "Valid detections:",
+        data.tracked_objects?.filter(
+          (obj) => obj.is_valid || obj.status === "confirmed"
+        )
+      );
+
       const img = new Image();
       img.onload = () => {
         drawDetections(img, data.tracked_objects);
@@ -182,6 +191,8 @@ const LiveDetection = () => {
   };
 
   const drawDetections = (img, trackedObjects) => {
+    console.log("Drawing detections for objects:", trackedObjects);
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -190,12 +201,29 @@ const LiveDetection = () => {
     canvas.height = img.height;
     ctx.drawImage(img, 0, 0);
 
+    if (!trackedObjects || trackedObjects.length === 0) {
+      console.log("No objects to draw");
+      return;
+    }
+
     trackedObjects.forEach((obj) => {
-      // Only draw objects that are valid or confirmed
-      if (!obj.is_valid && obj.status !== "confirmed") return;
+      console.log("Processing object:", obj);
+      if (!obj.is_valid && obj.status !== "confirmed") {
+        console.log("Skipping invalid object:", obj);
+        return;
+      }
 
       const [x1, y1, x2, y2] = obj.bbox;
       const color = obj.status === "confirmed" ? "#22c55e" : "#eab308";
+
+      console.log("Drawing box:", {
+        x1,
+        y1,
+        x2,
+        y2,
+        color,
+        status: obj.status,
+      });
 
       // Adjust opacity based on stability
       const opacity = obj.stability ? Math.max(0.3, obj.stability) : 1;
