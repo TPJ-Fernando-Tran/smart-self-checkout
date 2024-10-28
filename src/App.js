@@ -2,6 +2,78 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import io from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
 
+const QuantityAdjuster = ({
+  itemName,
+  currentQuantity,
+  originalQuantity,
+  unitPrice,
+  onAdjust,
+  onRequestAssistance,
+}) => {
+  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [quantity, setQuantity] = useState(currentQuantity);
+  const priceChange = (quantity - currentQuantity) * unitPrice;
+
+  const handleAdjust = (newQuantity) => {
+    const change = newQuantity - currentQuantity;
+    const decreaseAmount = -change * unitPrice;
+
+    if (newQuantity < originalQuantity && decreaseAmount > 5) {
+      // If decrease is more than $5, request assistance
+      onRequestAssistance(itemName, currentQuantity, newQuantity);
+      return;
+    }
+
+    setQuantity(newQuantity);
+    if (newQuantity !== currentQuantity) {
+      onAdjust(itemName, newQuantity);
+    }
+  };
+
+  const startAdjusting = () => {
+    setIsAdjusting(true);
+    speakInstruction(
+      "You're trying to change the quantity of this item. Please note that this scanning session will be recorded to ensure the integrity of the process."
+    );
+  };
+
+  return (
+    <div className="flex items-center space-x-2">
+      {!isAdjusting ? (
+        <button
+          onClick={startAdjusting}
+          className="text-blue-600 hover:text-blue-800"
+        >
+          Adjust
+        </button>
+      ) : (
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => handleAdjust(quantity - 1)}
+            className="p-1 text-gray-600 hover:text-gray-800"
+            disabled={quantity <= 0}
+          >
+            -
+          </button>
+          <span className="min-w-[2rem] text-center">{quantity}</span>
+          <button
+            onClick={() => handleAdjust(quantity + 1)}
+            className="p-1 text-gray-600 hover:text-gray-800"
+          >
+            +
+          </button>
+          <button
+            onClick={() => setIsAdjusting(false)}
+            className="ml-2 text-sm text-gray-500 hover:text-gray-700"
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LiveDetection = () => {
   const canvasRef = useRef(null);
   const [fps, setFps] = useState(0);
@@ -19,6 +91,9 @@ const LiveDetection = () => {
     empty_confidence: 1.0,
   });
   const [processingItems, setProcessingItems] = useState(new Set());
+  const [showAssistanceModal, setShowAssistanceModal] = useState(false);
+  const [adjustmentMessage, setAdjustmentMessage] = useState("");
+  const [originalQuantities, setOriginalQuantities] = useState({});
 
   let frameCount = 0;
   let lastTime = Date.now();
@@ -36,14 +111,53 @@ const LiveDetection = () => {
             unit_price: 0,
             image_path: "",
           };
+          // Store original quantity
+          setOriginalQuantities((prev) => ({
+            ...prev,
+            [itemName]: 1,
+          }));
         } else {
           newCart[itemName].quantity += 1;
+          setOriginalQuantities((prev) => ({
+            ...prev,
+            [itemName]: (prev[itemName] || 0) + 1,
+          }));
         }
         lastConfirmedTimeRef.current[obj.id] = Date.now();
       }
     });
     setConfirmedObjects(newCart);
   }, []);
+  const handleQuantityAdjust = (itemName, newQuantity) => {
+    const item = confirmedObjects[itemName];
+    const originalQuantity = originalQuantities[itemName];
+    const priceChange = (newQuantity - item.quantity) * item.unit_price;
+
+    if (newQuantity < item.quantity) {
+      // Reducing quantity
+      speakInstruction(
+        "Please ensure you have returned the item to its original location. Random audits may be conducted to verify inventory accuracy."
+      );
+    }
+
+    setConfirmedObjects((prev) => ({
+      ...prev,
+      [itemName]: {
+        ...prev[itemName],
+        quantity: newQuantity,
+      },
+    }));
+  };
+
+  const handleRequestAssistance = (itemName, currentQty, requestedQty) => {
+    setAdjustmentMessage(
+      `Assistance needed: Customer wants to reduce ${itemName} quantity from ${currentQty} to ${requestedQty}. This exceeds the $5 limit for self-service adjustments.`
+    );
+    setShowAssistanceModal(true);
+    speakInstruction(
+      "This adjustment requires assistance. An associate will be with you shortly."
+    );
+  };
 
   useEffect(() => {
     socketRef.current = io(BACKEND_URL, {
@@ -437,7 +551,16 @@ const LiveDetection = () => {
                         />
                       </td>
                       <td className="p-2 font-medium">{itemName}</td>
-                      <td className="p-2 text-center">{item.quantity}</td>
+                      <td className="p-2 text-center">
+                        <QuantityAdjuster
+                          itemName={itemName}
+                          currentQuantity={item.quantity}
+                          originalQuantity={originalQuantities[itemName]}
+                          unitPrice={item.unit_price}
+                          onAdjust={handleQuantityAdjust}
+                          onRequestAssistance={handleRequestAssistance}
+                        />
+                      </td>
                       <td className="p-2 text-right">
                         ${item.unit_price?.toFixed(2) || "N/A"}
                       </td>
@@ -448,6 +571,24 @@ const LiveDetection = () => {
                   ))}
                 </AnimatePresence>
               </tbody>
+
+              {/* Assistance Modal */}
+              {showAssistanceModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                  <div className="bg-white p-6 rounded-lg max-w-md">
+                    <h3 className="text-lg font-bold mb-4">
+                      Assistance Required
+                    </h3>
+                    <p className="mb-4">{adjustmentMessage}</p>
+                    <button
+                      onClick={() => setShowAssistanceModal(false)}
+                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              )}
             </table>
           </div>
           <div className="mt-4 p-4 bg-white rounded-lg shadow-sm">
