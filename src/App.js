@@ -10,16 +10,16 @@ const QuantityAdjuster = ({
   onAdjust,
   onRequestAssistance,
   onSpeak,
+  onReset,
+  isManuallyAdjusted,
 }) => {
   const [isAdjusting, setIsAdjusting] = useState(false);
-  // Remove the local quantity state and use currentQuantity directly
 
   const handleAdjust = (newQuantity) => {
     const change = newQuantity - currentQuantity;
     const decreaseAmount = -change * unitPrice;
 
     if (newQuantity < originalQuantity && decreaseAmount > 5) {
-      // If decrease is more than $5, request assistance
       onRequestAssistance(itemName, currentQuantity, newQuantity);
       return;
     }
@@ -39,12 +39,26 @@ const QuantityAdjuster = ({
   return (
     <div className="flex items-center space-x-2">
       {!isAdjusting ? (
-        <button
-          onClick={startAdjusting}
-          className="text-blue-600 hover:text-blue-800"
-        >
-          Adjust
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={startAdjusting}
+            className="text-blue-600 hover:text-blue-800"
+          >
+            Adjust
+          </button>
+          {isManuallyAdjusted && (
+            <button
+              onClick={() => {
+                onReset(itemName);
+                onSpeak("Quantity reset to automatic detection.");
+              }}
+              className="text-xs text-gray-500 hover:text-gray-700"
+              title="Reset to detected quantity"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       ) : (
         <div className="flex items-center space-x-2">
           <button
@@ -93,40 +107,61 @@ const LiveDetection = () => {
   const [showAssistanceModal, setShowAssistanceModal] = useState(false);
   const [adjustmentMessage, setAdjustmentMessage] = useState("");
   const [originalQuantities, setOriginalQuantities] = useState({});
+  const [manualAdjustments, setManualAdjustments] = useState({});
 
   let frameCount = 0;
   let lastTime = Date.now();
 
   const BACKEND_URL = "https://192.168.137.154:5000";
 
-  const updateShoppingCart = useCallback((tracked, confirmed) => {
-    const newCart = { ...confirmed };
-    tracked.forEach((obj) => {
-      if (obj.status === "confirmed") {
-        const itemName = obj.class;
-        if (!newCart[itemName]) {
-          newCart[itemName] = {
-            quantity: 1,
-            unit_price: 0,
-            image_path: "",
-          };
-          // Store original quantity
-          setOriginalQuantities((prev) => ({
-            ...prev,
-            [itemName]: 1,
-          }));
-        } else {
-          newCart[itemName].quantity += 1;
-          setOriginalQuantities((prev) => ({
-            ...prev,
-            [itemName]: (prev[itemName] || 0) + 1,
-          }));
+  // Update the updateShoppingCart function to respect manual adjustments
+  const updateShoppingCart = useCallback(
+    (tracked, confirmed) => {
+      const newCart = { ...confirmed };
+
+      // First, process the confirmed detections
+      tracked.forEach((obj) => {
+        if (obj.status === "confirmed") {
+          const itemName = obj.class;
+          // Only update quantities for items that haven't been manually adjusted
+          if (!manualAdjustments[itemName]) {
+            if (!newCart[itemName]) {
+              newCart[itemName] = {
+                quantity: 1,
+                unit_price: 0,
+                image_path: "",
+              };
+              // Store original quantity
+              setOriginalQuantities((prev) => ({
+                ...prev,
+                [itemName]: 1,
+              }));
+            } else {
+              newCart[itemName].quantity += 1;
+              setOriginalQuantities((prev) => ({
+                ...prev,
+                [itemName]: (prev[itemName] || 0) + 1,
+              }));
+            }
+            lastConfirmedTimeRef.current[obj.id] = Date.now();
+          }
         }
-        lastConfirmedTimeRef.current[obj.id] = Date.now();
-      }
-    });
-    setConfirmedObjects(newCart);
-  }, []);
+      });
+
+      // Preserve manually adjusted quantities
+      Object.entries(manualAdjustments).forEach(([itemName, quantity]) => {
+        if (newCart[itemName]) {
+          newCart[itemName] = {
+            ...newCart[itemName],
+            quantity: quantity,
+          };
+        }
+      });
+
+      setConfirmedObjects(newCart);
+    },
+    [manualAdjustments]
+  );
 
   // Update the handleQuantityAdjust function in LiveDetection
   const handleQuantityAdjust = (itemName, newQuantity) => {
@@ -140,12 +175,18 @@ const LiveDetection = () => {
       );
     }
 
+    // Store the manual adjustment
+    setManualAdjustments((prev) => ({
+      ...prev,
+      [itemName]: newQuantity,
+    }));
+
     setConfirmedObjects((prev) => ({
       ...prev,
       [itemName]: {
         ...prev[itemName],
         quantity: newQuantity,
-        _previousQuantity: item.quantity, // Store previous quantity for potential revert
+        _previousQuantity: item.quantity,
       },
     }));
 
@@ -158,6 +199,15 @@ const LiveDetection = () => {
       0
     );
     setTotalPrice(updatedTotal);
+  };
+
+  // Add a function to reset manual adjustment if needed
+  const resetManualAdjustment = (itemName) => {
+    setManualAdjustments((prev) => {
+      const newAdjustments = { ...prev };
+      delete newAdjustments[itemName];
+      return newAdjustments;
+    });
   };
 
   const handleRequestAssistance = (itemName, currentQty, requestedQty) => {
@@ -571,7 +621,11 @@ const LiveDetection = () => {
                           unitPrice={item.unit_price}
                           onAdjust={handleQuantityAdjust}
                           onRequestAssistance={handleRequestAssistance}
-                          onSpeak={speakInstruction} // Pass the speakInstruction function
+                          onSpeak={speakInstruction}
+                          onReset={resetManualAdjustment}
+                          isManuallyAdjusted={Boolean(
+                            manualAdjustments[itemName]
+                          )}
                         />
                       </td>
                       <td className="p-2 text-right">
