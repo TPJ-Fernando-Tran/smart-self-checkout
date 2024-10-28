@@ -340,11 +340,9 @@ const LiveDetection = () => {
         const progressBarY = y2 + 5;
         const progressBarWidth = x2 - x1;
         const progress = obj.progress || 0;
-        const stability = obj.stability || 0;
 
-        // Draw multi-segment progress bar
-        // Background
-        ctx.fillStyle = "rgba(239, 68, 68, 0.3)";
+        // Background (red)
+        ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
         ctx.beginPath();
         roundRect(
           ctx,
@@ -356,58 +354,18 @@ const LiveDetection = () => {
         );
         ctx.fill();
 
-        // Progress bar with segments
-        const segmentWidth = progressBarWidth / 3;
-
-        // Stability segment (Blue)
-        ctx.fillStyle = "rgba(59, 130, 246, 0.9)"; // Blue
+        // Progress (green)
+        ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
         ctx.beginPath();
         roundRect(
           ctx,
           x1,
           progressBarY,
-          (segmentWidth * Math.min(100, stability * 100)) / 100,
+          (progressBarWidth * progress) / 100,
           progressBarHeight,
           2
         );
         ctx.fill();
-
-        // Detection count segment (Yellow)
-        ctx.fillStyle = "rgba(234, 179, 8, 0.9)"; // Yellow
-        ctx.beginPath();
-        roundRect(
-          ctx,
-          x1 + segmentWidth,
-          progressBarY,
-          (segmentWidth * progress) / 100,
-          progressBarHeight,
-          2
-        );
-        ctx.fill();
-
-        // Combined progress (Green)
-        ctx.fillStyle = "rgba(34, 197, 94, 0.9)"; // Green
-        ctx.beginPath();
-        roundRect(
-          ctx,
-          x1 + 2 * segmentWidth,
-          progressBarY,
-          (segmentWidth * Math.min(progress, stability * 100)) / 100,
-          progressBarHeight,
-          2
-        );
-        ctx.fill();
-
-        // Add progress text
-        const progressText = `${Math.round(progress)}%`;
-        ctx.font = "12px Arial";
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.fillText(
-          progressText,
-          x1 + progressBarWidth / 2,
-          progressBarY + progressBarHeight + 12
-        );
       }
     });
 
