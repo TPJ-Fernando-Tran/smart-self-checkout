@@ -291,77 +291,87 @@ const LiveDetection = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Left side - Camera Feed and Instructions */}
-      <div className="flex-1 flex flex-col">
-        {/* Camera Feed with Bounding Boxes */}
-        <div className="relative flex-1 bg-black">
-          <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 w-full h-full object-contain"
-          />
-          <div className="absolute top-4 left-4 bg-black/50 text-white px-2 py-1 rounded">
-            FPS: {fps}
-          </div>
-        </div>
-        {/* Instructions Panel */}
-        <div className="bg-white p-4 shadow-lg">
-          <div className="text-lg font-semibold text-gray-800">
-            {instruction}
-          </div>
-        </div>
+    <div className="flex flex-col h-screen bg-gray-100">
+      <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
+        <p className="font-bold">Instructions:</p>
+        <p>{instruction}</p>
       </div>
-
-      {/* Right side - Shopping Cart */}
-      <div className="w-96 bg-white shadow-lg p-4 overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-4">Shopping Cart</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Item
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Qty
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Price
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Total
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {Object.entries(confirmedObjects).map(([itemName, item]) => (
-                <tr key={itemName}>
-                  <td className="px-4 py-2">{itemName}</td>
-                  <td className="px-4 py-2">{item.quantity}</td>
-                  <td className="px-4 py-2">
-                    ${item.unit_price?.toFixed(2) || "N/A"}
-                  </td>
-                  <td className="px-4 py-2">
-                    ${(item.quantity * (item.unit_price || 0)).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Total and Checkout Button */}
-        <div className="mt-4 pt-4 border-t">
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-xl font-bold">Total:</span>
-            <span className="text-xl font-bold">${totalPrice.toFixed(2)}</span>
+      <div className="flex flex-grow">
+        <div className="w-1/2 p-4 flex flex-col">
+          <h2 className="text-2xl font-bold mb-4">Live Detection</h2>
+          <div className="relative flex-grow">
+            <canvas
+              ref={canvasRef}
+              className="absolute top-0 left-0 w-full h-full object-contain"
+            />
           </div>
-          <button
-            onClick={() => console.log("Proceeding to checkout")}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Proceed to Checkout
-          </button>
+          <div className="mt-2">FPS: {fps}</div>
+        </div>
+        <div className="w-1/2 p-4 flex flex-col">
+          <h2 className="text-2xl font-bold mb-4">Shopping Cart</h2>
+          <div className="flex-grow overflow-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="p-2">Image</th>
+                  <th className="p-2">Item Name</th>
+                  <th className="p-2">Quantity</th>
+                  <th className="p-2">Unit Price</th>
+                  <th className="p-2">Total Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence>
+                  {Object.entries(confirmedObjects).map(([itemName, item]) => (
+                    <motion.tr
+                      key={itemName}
+                      initial={{ opacity: 0, y: -20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 20 }}
+                      transition={{ duration: 0.3 }}
+                      className="border-b"
+                    >
+                      <td className="p-2">
+                        <img
+                          src={`${BACKEND_URL}/Assets/${item.image_path
+                            .split("/")
+                            .pop()}`}
+                          alt={itemName}
+                          className="w-16 h-16 object-cover rounded-lg"
+                        />
+                      </td>
+                      <td className="p-2 font-medium">{itemName}</td>
+                      <td className="p-2 text-center">{item.quantity}</td>
+                      <td className="p-2 text-right">
+                        ${item.unit_price?.toFixed(2) || "N/A"}
+                      </td>
+                      <td className="p-2 text-right font-medium">
+                        ${(item.quantity * (item.unit_price || 0)).toFixed(2)}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 p-4 bg-white rounded-lg shadow-sm">
+            <div className="text-xl font-bold text-right">
+              Total: ${totalPrice.toFixed(2)}
+            </div>
+            <button
+              onClick={handleCheckout}
+              disabled={undeterminedObjects.length > 0}
+              className={`mt-4 w-full p-3 text-white font-bold rounded-lg transition-all duration-200 ${
+                undeterminedObjects.length > 0
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600 active:bg-blue-700"
+              }`}
+            >
+              {undeterminedObjects.length > 0
+                ? "Please wait for all items to be confirmed"
+                : "Proceed to Checkout"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
