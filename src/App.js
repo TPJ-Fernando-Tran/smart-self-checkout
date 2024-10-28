@@ -17,7 +17,8 @@ const LiveDetection = () => {
   const [frameStatus, setFrameStatus] = useState({
     is_empty: true,
     empty_confidence: 1.0,
-  }); // Add this line
+  });
+  const [processingItems, setProcessingItems] = useState(new Set());
 
   let frameCount = 0;
   let lastTime = Date.now();
@@ -128,6 +129,7 @@ const LiveDetection = () => {
     const itemsInFrame = trackedObjects.filter(
       (obj) => obj.is_valid || obj.status === "confirmed"
     ).length;
+    const processingCount = processingItems.size;
     const confirmedInFrame = trackedObjects.filter(
       (obj) => obj.status === "confirmed"
     );
@@ -135,6 +137,13 @@ const LiveDetection = () => {
       (obj) => obj.status === "undetermined" && obj.is_valid
     );
     const currentTime = Date.now();
+
+    // Items detected but still processing stability
+    if (processingCount > 0 && itemsInFrame === 0) {
+      return `Detected ${processingCount} item${
+        processingCount > 1 ? "s" : ""
+      }. Processing stability check, please keep items steady...`;
+    }
 
     // No items in scanning area - now uses frame_status
     if (frameStatus.is_empty || itemsInFrame === 0) {
@@ -191,8 +200,6 @@ const LiveDetection = () => {
   };
 
   const drawDetections = (img, trackedObjects) => {
-    console.log("Drawing detections for objects:", trackedObjects);
-
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -201,29 +208,93 @@ const LiveDetection = () => {
     canvas.height = img.height;
     ctx.drawImage(img, 0, 0);
 
-    if (!trackedObjects || trackedObjects.length === 0) {
-      console.log("No objects to draw");
-      return;
-    }
+    // Track currently processing items
+    const currentlyProcessing = new Set();
 
     trackedObjects.forEach((obj) => {
-      console.log("Processing object:", obj);
-      if (!obj.is_valid && obj.status !== "confirmed") {
-        console.log("Skipping invalid object:", obj);
-        return;
+      const isProcessingStability = obj.history_length < 15; // MIN_HISTORY_LENGTH from backend
+      if (isProcessingStability) {
+        currentlyProcessing.add(obj.id);
       }
+
+      // Draw detection boxes for objects being processed
+      if (isProcessingStability) {
+        const [x1, y1, x2, y2] = obj.bbox;
+
+        // Draw dashed box for processing items
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = "#6366f1"; // Indigo color for processing
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.setLineDash([]); // Reset dash pattern
+
+        // Draw "Processing..." label
+        const text = `Processing ${obj.class}...`;
+        ctx.font = "16px Arial";
+        const textWidth = ctx.measureText(text).width;
+        const padding = 4;
+
+        let textX = x1;
+        let textY = y1 - 5;
+        if (textY < 20) textY = y2 + 20;
+        if (textX + textWidth > canvas.width)
+          textX = canvas.width - textWidth - padding;
+
+        // Draw label background
+        ctx.fillStyle = "#6366f1";
+        ctx.beginPath();
+        roundRect(
+          ctx,
+          textX - padding,
+          textY - 20,
+          textWidth + padding * 2,
+          24,
+          4
+        );
+        ctx.fill();
+
+        // Draw text
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(text, textX, textY - 4);
+
+        // Draw stability progress bar
+        const progressBarHeight = 4;
+        const progressBarY = y2 + 5;
+        const progressBarWidth = x2 - x1;
+        const stabilityProgress = (obj.history_length / 15) * 100; // 15 is MIN_HISTORY_LENGTH
+
+        // Background
+        ctx.fillStyle = "rgba(99, 102, 241, 0.3)";
+        ctx.beginPath();
+        roundRect(
+          ctx,
+          x1,
+          progressBarY,
+          progressBarWidth,
+          progressBarHeight,
+          2
+        );
+        ctx.fill();
+
+        // Progress
+        ctx.fillStyle = "rgba(99, 102, 241, 0.9)";
+        ctx.beginPath();
+        roundRect(
+          ctx,
+          x1,
+          progressBarY,
+          (progressBarWidth * stabilityProgress) / 100,
+          progressBarHeight,
+          2
+        );
+        ctx.fill();
+      }
+
+      // Only draw regular detection boxes for valid or confirmed objects
+      if (!obj.is_valid && obj.status !== "confirmed") return;
 
       const [x1, y1, x2, y2] = obj.bbox;
       const color = obj.status === "confirmed" ? "#22c55e" : "#eab308";
-
-      console.log("Drawing box:", {
-        x1,
-        y1,
-        x2,
-        y2,
-        color,
-        status: obj.status,
-      });
 
       // Adjust opacity based on stability
       const opacity = obj.stability ? Math.max(0.3, obj.stability) : 1;
@@ -242,29 +313,24 @@ const LiveDetection = () => {
       const textWidth = ctx.measureText(text).width;
       const padding = 4;
 
-      // Position text and background
       let textX = x1;
       let textY = y1 - 5;
       if (textY < 20) textY = y2 + 20;
       if (textX + textWidth > canvas.width)
         textX = canvas.width - textWidth - padding;
 
-      // Draw background with rounded corners and stability-based opacity
       ctx.fillStyle = strokeColor;
       ctx.beginPath();
-      const backgroundHeight = 24;
-      const radius = 4;
       roundRect(
         ctx,
         textX - padding,
         textY - 20,
         textWidth + padding * 2,
-        backgroundHeight,
-        radius
+        24,
+        4
       );
       ctx.fill();
 
-      // Draw text
       ctx.fillStyle = "#ffffff";
       ctx.fillText(text, textX, textY - 4);
 
@@ -273,8 +339,6 @@ const LiveDetection = () => {
         const progressBarHeight = 4;
         const progressBarY = y2 + 5;
         const progressBarWidth = x2 - x1;
-
-        // Draw stability bar instead of simple progress
         const progress = obj.progress || 0;
         const stability = obj.stability || 0;
 
@@ -291,8 +355,8 @@ const LiveDetection = () => {
         );
         ctx.fill();
 
-        // Progress with stability influence
-        const effectiveProgress = progress * stability;
+        // Show both stability and confirmation progress
+        const effectiveProgress = Math.min(progress, stability * 100);
         ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
         ctx.beginPath();
         roundRect(
@@ -306,6 +370,9 @@ const LiveDetection = () => {
         ctx.fill();
       }
     });
+
+    // Update processing items state
+    setProcessingItems(currentlyProcessing);
   };
 
   const updateFPS = () => {
