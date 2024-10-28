@@ -14,6 +14,10 @@ const LiveDetection = () => {
   const lastConfirmedTimeRef = useRef({});
   const scanStartTimeRef = useRef(null);
   const socketRef = useRef(null);
+  const [frameStatus, setFrameStatus] = useState({
+    is_empty: true,
+    empty_confidence: 1.0,
+  }); // Add this line
 
   let frameCount = 0;
   let lastTime = Date.now();
@@ -78,6 +82,9 @@ const LiveDetection = () => {
         data.confirmed_objects || {}
       );
       setUndeterminedObjects(data.undetermined_objects || []);
+      setFrameStatus(
+        data.frame_status || { is_empty: true, empty_confidence: 1.0 }
+      ); // Add this line
 
       if (data.tracked_objects?.length > 0 && !scanStartTimeRef.current) {
         scanStartTimeRef.current = Date.now();
@@ -121,7 +128,7 @@ const LiveDetection = () => {
     const currentTime = Date.now();
 
     // No items in scanning area - now uses frame_status
-    if (frameStatus?.is_empty || itemsInFrame === 0) {
+    if (frameStatus.is_empty || itemsInFrame === 0) {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
 
@@ -130,7 +137,7 @@ const LiveDetection = () => {
       currentTime - scanStartTimeRef.current > 10000 &&
       confirmedInFrame.length === 0
     ) {
-      return "Items are taking longer than usual to confirm. Please reposition the yellow-boxed items to ensure they're clearly visible to the camera.";
+      return "Items are taking longer than usual to confirm. Please reposition the yellow-boxed items to ensure they're clearly visible to the camera. If you believe we have detected something wrong, click the help button and an assistant will come help you right away. Sorry for this inconvenience.";
     }
 
     if (confirmedInFrame.length > 0 && undeterminedInFrame.length > 0) {
