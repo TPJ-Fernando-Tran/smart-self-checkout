@@ -9,11 +9,10 @@ const QuantityAdjuster = ({
   unitPrice,
   onAdjust,
   onRequestAssistance,
-  onSpeak, // Add this prop
+  onSpeak,
 }) => {
   const [isAdjusting, setIsAdjusting] = useState(false);
-  const [quantity, setQuantity] = useState(currentQuantity);
-  const priceChange = (quantity - currentQuantity) * unitPrice;
+  // Remove the local quantity state and use currentQuantity directly
 
   const handleAdjust = (newQuantity) => {
     const change = newQuantity - currentQuantity;
@@ -25,7 +24,6 @@ const QuantityAdjuster = ({
       return;
     }
 
-    setQuantity(newQuantity);
     if (newQuantity !== currentQuantity) {
       onAdjust(itemName, newQuantity);
     }
@@ -50,15 +48,15 @@ const QuantityAdjuster = ({
       ) : (
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => handleAdjust(quantity - 1)}
+            onClick={() => handleAdjust(currentQuantity - 1)}
             className="p-1 text-gray-600 hover:text-gray-800"
-            disabled={quantity <= 0}
+            disabled={currentQuantity <= 0}
           >
             -
           </button>
-          <span className="min-w-[2rem] text-center">{quantity}</span>
+          <span className="min-w-[2rem] text-center">{currentQuantity}</span>
           <button
-            onClick={() => handleAdjust(quantity + 1)}
+            onClick={() => handleAdjust(currentQuantity + 1)}
             className="p-1 text-gray-600 hover:text-gray-800"
           >
             +
@@ -129,10 +127,11 @@ const LiveDetection = () => {
     });
     setConfirmedObjects(newCart);
   }, []);
+
+  // Update the handleQuantityAdjust function in LiveDetection
   const handleQuantityAdjust = (itemName, newQuantity) => {
     const item = confirmedObjects[itemName];
     const originalQuantity = originalQuantities[itemName];
-    const priceChange = (newQuantity - item.quantity) * item.unit_price;
 
     if (newQuantity < item.quantity) {
       // Reducing quantity
@@ -146,8 +145,19 @@ const LiveDetection = () => {
       [itemName]: {
         ...prev[itemName],
         quantity: newQuantity,
+        _previousQuantity: item.quantity, // Store previous quantity for potential revert
       },
     }));
+
+    // Recalculate total price
+    const updatedTotal = Object.entries({
+      ...confirmedObjects,
+      [itemName]: { ...item, quantity: newQuantity },
+    }).reduce(
+      (sum, [_, item]) => sum + item.quantity * (item.unit_price || 0),
+      0
+    );
+    setTotalPrice(updatedTotal);
   };
 
   const handleRequestAssistance = (itemName, currentQty, requestedQty) => {
@@ -233,6 +243,7 @@ const LiveDetection = () => {
       lastInstructionRef.current = newInstruction;
     }
 
+    // Calculate total price whenever confirmedObjects changes
     const total = Object.entries(confirmedObjects).reduce(
       (sum, [_, item]) => sum + item.quantity * (item.unit_price || 0),
       0
