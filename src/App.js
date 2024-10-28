@@ -109,16 +109,19 @@ const LiveDetection = () => {
   }, [confirmedObjects, undeterminedObjects, trackedObjects]);
 
   const getContextualInstructions = () => {
-    const itemsInFrame = trackedObjects.length;
+    const itemsInFrame = trackedObjects.filter(
+      (obj) => obj.is_valid || obj.status === "confirmed"
+    ).length;
     const confirmedInFrame = trackedObjects.filter(
       (obj) => obj.status === "confirmed"
     );
     const undeterminedInFrame = trackedObjects.filter(
-      (obj) => obj.status === "undetermined"
+      (obj) => obj.status === "undetermined" && obj.is_valid
     );
     const currentTime = Date.now();
 
-    if (itemsInFrame === 0) {
+    // No items in scanning area - now uses frame_status
+    if (frameStatus?.is_empty || itemsInFrame === 0) {
       return "Please place items in the scanning area. Make sure everything is spread out and visible for the camera.";
     }
 
@@ -174,68 +177,98 @@ const LiveDetection = () => {
   const drawDetections = (img, trackedObjects) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
 
-    // Set canvas dimensions to match image
+    const ctx = canvas.getContext("2d");
     canvas.width = img.width;
     canvas.height = img.height;
-
-    // Clear canvas and draw image
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
 
-    // Draw bounding boxes and labels
     trackedObjects.forEach((obj) => {
+      // Only draw objects that are valid or confirmed
+      if (!obj.is_valid && obj.status !== "confirmed") return;
+
       const [x1, y1, x2, y2] = obj.bbox;
       const color = obj.status === "confirmed" ? "#22c55e" : "#eab308";
 
-      // Draw bounding box
-      ctx.strokeStyle = color;
+      // Adjust opacity based on stability
+      const opacity = obj.stability ? Math.max(0.3, obj.stability) : 1;
+      const strokeColor = `${color}${Math.round(opacity * 255)
+        .toString(16)
+        .padStart(2, "0")}`;
+
+      // Draw box with stability-based opacity
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-      // Draw label
+      // Draw label background
       const text = `${obj.class} ${(obj.confidence * 100).toFixed(1)}%`;
       ctx.font = "16px Arial";
-      const textMetrics = ctx.measureText(text);
-      const textWidth = textMetrics.width;
+      const textWidth = ctx.measureText(text).width;
       const padding = 4;
 
-      // Position label
+      // Position text and background
       let textX = x1;
-      let textY = y1 - 10;
+      let textY = y1 - 5;
       if (textY < 20) textY = y2 + 20;
-      if (textX + textWidth > canvas.width) {
+      if (textX + textWidth > canvas.width)
         textX = canvas.width - textWidth - padding;
-      }
 
-      // Draw label background
-      ctx.fillStyle = color;
-      ctx.fillRect(textX - padding, textY - 16, textWidth + padding * 2, 20);
+      // Draw background with rounded corners and stability-based opacity
+      ctx.fillStyle = strokeColor;
+      ctx.beginPath();
+      const backgroundHeight = 24;
+      const radius = 4;
+      roundRect(
+        ctx,
+        textX - padding,
+        textY - 20,
+        textWidth + padding * 2,
+        backgroundHeight,
+        radius
+      );
+      ctx.fill();
 
-      // Draw label text
+      // Draw text
       ctx.fillStyle = "#ffffff";
-      ctx.fillText(text, textX, textY);
+      ctx.fillText(text, textX, textY - 4);
 
       // Draw progress bar for undetermined objects
       if (obj.status === "undetermined") {
         const progressBarHeight = 4;
         const progressBarY = y2 + 5;
         const progressBarWidth = x2 - x1;
+
+        // Draw stability bar instead of simple progress
         const progress = obj.progress || 0;
+        const stability = obj.stability || 0;
 
         // Background
         ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
-        ctx.fillRect(x1, progressBarY, progressBarWidth, progressBarHeight);
-
-        // Progress
-        ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
-        ctx.fillRect(
+        ctx.beginPath();
+        roundRect(
+          ctx,
           x1,
           progressBarY,
-          (progressBarWidth * progress) / 100,
-          progressBarHeight
+          progressBarWidth,
+          progressBarHeight,
+          2
         );
+        ctx.fill();
+
+        // Progress with stability influence
+        const effectiveProgress = progress * stability;
+        ctx.fillStyle = "rgba(34, 197, 94, 0.9)";
+        ctx.beginPath();
+        roundRect(
+          ctx,
+          x1,
+          progressBarY,
+          (progressBarWidth * effectiveProgress) / 100,
+          progressBarHeight,
+          2
+        );
+        ctx.fill();
       }
     });
   };
