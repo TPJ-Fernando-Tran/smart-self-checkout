@@ -289,6 +289,9 @@ const LiveDetection = () => {
       lastTime = currentTime;
     }
   };
+  const handleCheckout = () => {
+    console.log("Proceed to checkout");
+  };
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
