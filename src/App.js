@@ -9,6 +9,7 @@ const QuantityAdjuster = ({
   unitPrice,
   onAdjust,
   onRequestAssistance,
+  onSpeak, // Add this prop
 }) => {
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [quantity, setQuantity] = useState(currentQuantity);
@@ -32,7 +33,7 @@ const QuantityAdjuster = ({
 
   const startAdjusting = () => {
     setIsAdjusting(true);
-    speakInstruction(
+    onSpeak(
       "You're trying to change the quantity of this item. Please note that this scanning session will be recorded to ensure the integrity of the process."
     );
   };
@@ -559,6 +560,7 @@ const LiveDetection = () => {
                           unitPrice={item.unit_price}
                           onAdjust={handleQuantityAdjust}
                           onRequestAssistance={handleRequestAssistance}
+                          onSpeak={speakInstruction} // Pass the speakInstruction function
                         />
                       </td>
                       <td className="p-2 text-right">
